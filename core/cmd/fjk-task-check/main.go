@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/fjk-dev/fjk-agent/core/config"
+	"github.com/fjk-dev/fjk-agent/core/event"
 	"github.com/fjk-dev/fjk-agent/core/storage/sqlite"
 	"github.com/fjk-dev/fjk-agent/core/task"
 )
@@ -15,26 +16,44 @@ func main() {
 
 	cfg := config.Load()
 
-	store, err := sqlite.Open(cfg.DatabasePath)
+	store, err :=
+		sqlite.Open(
+			cfg.DatabasePath,
+		)
+
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	defer store.Close()
 
-	repository := task.NewSQLiteRepository(store.DB())
+	if err :=
+		store.Migrate(); err != nil {
+		log.Fatal(err)
+	}
 
-	items, err := repository.List(ctx)
+	manager :=
+		task.NewManager(
+			task.NewSQLiteRepository(
+				store.DB(),
+			),
+			event.NewBus(),
+		)
+
+	item, err :=
+		manager.Create(
+			ctx,
+			"session_id_check",
+			"Persistent Task ID Check",
+			"Verify task IDs survive process restart",
+		)
+
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Println("TASK COUNT:", len(items))
-
-	for _, item := range items {
-		fmt.Println(
-			item.ID,
-			item.Status,
-			item.Title,
-		)
-	}
+	fmt.Println(
+		"TASK ID:",
+		item.ID,
+	)
 }

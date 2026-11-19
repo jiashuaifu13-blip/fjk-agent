@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/fjk-dev/fjk-agent/core/event"
 )
@@ -28,14 +29,35 @@ func (m *Manager) Create(
 	title string,
 	description string,
 ) (*Task, error) {
-	item := New(
-		NewID(),
-		sessionID,
-		title,
-		description,
-	)
+	now := time.Now().UTC()
 
-	if err := m.repository.Create(ctx, item); err != nil {
+	id, err :=
+		allocateID(
+			ctx,
+			m.repository,
+			now,
+		)
+
+	if err != nil {
+		return nil, err
+	}
+
+	item := &Task{
+		ID:          id,
+		SessionID:   sessionID,
+		Title:       title,
+		Description: description,
+		Status:      StatusCreated,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	if err :=
+		m.repository.Create(
+			ctx,
+			item,
+		); err != nil {
+
 		return nil, fmt.Errorf(
 			"create task: %w",
 			err,
@@ -51,7 +73,9 @@ func (m *Manager) Create(
 				SessionID: item.SessionID,
 			},
 			map[string]any{
-				"title": item.Title,
+				"title":       item.Title,
+				"description": item.Description,
+				"status":      item.Status,
 			},
 		),
 	)
@@ -64,29 +88,37 @@ func (m *Manager) Transition(
 	id string,
 	next Status,
 ) (*Task, error) {
-	item, err := m.repository.Get(ctx, id)
+	item, err :=
+		m.repository.Get(
+			ctx,
+			id,
+		)
 
 	if err != nil {
-		return nil, fmt.Errorf(
-			"get task: %w",
-			err,
-		)
-	}
-
-	if err := item.Transition(next); err != nil {
 		return nil, err
 	}
 
-	if err := m.repository.Update(ctx, item); err != nil {
-		return nil, fmt.Errorf(
-			"update task: %w",
-			err,
-		)
+	if err := item.Transition(
+		next,
+	); err != nil {
+		return nil, err
 	}
 
-	eventType, ok := eventTypeForStatus(next)
+	if err :=
+		m.repository.Update(
+			ctx,
+			item,
+		); err != nil {
 
-	if ok {
+		return nil, err
+	}
+
+	eventType :=
+		eventForStatus(
+			next,
+		)
+
+	if eventType != "" {
 		m.events.Publish(
 			ctx,
 			event.New(
@@ -109,39 +141,46 @@ func (m *Manager) Get(
 	ctx context.Context,
 	id string,
 ) (*Task, error) {
-	return m.repository.Get(ctx, id)
+	return m.repository.Get(
+		ctx,
+		id,
+	)
 }
 
 func (m *Manager) List(
 	ctx context.Context,
 ) ([]*Task, error) {
-	return m.repository.List(ctx)
+	return m.repository.List(
+		ctx,
+	)
 }
 
-func eventTypeForStatus(status Status) (event.Type, bool) {
+func eventForStatus(
+	status Status,
+) event.Type {
 	switch status {
 	case StatusQueued:
-		return event.TypeTaskQueued, true
+		return event.TypeTaskQueued
 
 	case StatusRunning:
-		return event.TypeTaskStarted, true
+		return event.TypeTaskStarted
 
 	case StatusWaitingApproval:
-		return event.TypeTaskWaitingApproval, true
+		return event.TypeTaskWaitingApproval
 
 	case StatusPaused:
-		return event.TypeTaskPaused, true
+		return event.TypeTaskPaused
 
 	case StatusCompleted:
-		return event.TypeTaskCompleted, true
+		return event.TypeTaskCompleted
 
 	case StatusFailed:
-		return event.TypeTaskFailed, true
+		return event.TypeTaskFailed
 
 	case StatusCancelled:
-		return event.TypeTaskCancelled, true
+		return event.TypeTaskCancelled
 
 	default:
-		return "", false
+		return ""
 	}
 }
