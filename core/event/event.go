@@ -24,6 +24,12 @@ const (
 	TypeToolCalled Type = "task.tool.called"
 	TypeToolResult Type = "task.tool.result"
 
+	TypeConversationStarted          Type = "conversation.started"
+	TypeConversationMessageCreated   Type = "conversation.message.created"
+	TypeConversationMessageDelta     Type = "conversation.message.delta"
+	TypeConversationMessageCompleted Type = "conversation.message.completed"
+	TypeConversationFailed           Type = "conversation.failed"
+
 	TypePetStateChanged   Type = "pet.state.changed"
 	TypePetEmotionChanged Type = "pet.emotion.changed"
 )

@@ -2,7 +2,9 @@ package deepseek
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 
 	einodeepseek "github.com/cloudwego/eino-ext/components/model/deepseek"
 	"github.com/cloudwego/eino/schema"
@@ -66,13 +68,100 @@ func (p *Provider) Generate(
 	ctx context.Context,
 	request fjkmodel.Request,
 ) (*fjkmodel.Response, error) {
+	messages, err :=
+		convertMessages(request.Messages)
+
+	if err != nil {
+		return nil, err
+	}
+
+	response, err :=
+		p.chatModel.Generate(
+			ctx,
+			messages,
+		)
+
+	if err != nil {
+		return nil, fmt.Errorf(
+			"deepseek generate: %w",
+			err,
+		)
+	}
+
+	return &fjkmodel.Response{
+		Content: response.Content,
+	}, nil
+}
+
+func (p *Provider) Stream(
+	ctx context.Context,
+	request fjkmodel.Request,
+	handler fjkmodel.StreamHandler,
+) error {
+	messages, err :=
+		convertMessages(request.Messages)
+
+	if err != nil {
+		return err
+	}
+
+	stream, err :=
+		p.chatModel.Stream(
+			ctx,
+			messages,
+		)
+
+	if err != nil {
+		return fmt.Errorf(
+			"deepseek stream: %w",
+			err,
+		)
+	}
+
+	defer stream.Close()
+
+	for {
+		chunk, err := stream.Recv()
+
+		if errors.Is(err, io.EOF) {
+			break
+		}
+
+		if err != nil {
+			return fmt.Errorf(
+				"receive deepseek stream: %w",
+				err,
+			)
+		}
+
+		if chunk == nil ||
+			chunk.Content == "" {
+			continue
+		}
+
+		if handler != nil {
+			if err := handler(
+				ctx,
+				chunk.Content,
+			); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func convertMessages(
+	input []fjkmodel.Message,
+) ([]*schema.Message, error) {
 	messages := make(
 		[]*schema.Message,
 		0,
-		len(request.Messages),
+		len(input),
 	)
 
-	for _, message := range request.Messages {
+	for _, message := range input {
 		var role schema.RoleType
 
 		switch message.Role {
@@ -104,20 +193,5 @@ func (p *Provider) Generate(
 		)
 	}
 
-	response, err :=
-		p.chatModel.Generate(
-			ctx,
-			messages,
-		)
-
-	if err != nil {
-		return nil, fmt.Errorf(
-			"deepseek generate: %w",
-			err,
-		)
-	}
-
-	return &fjkmodel.Response{
-		Content: response.Content,
-	}, nil
+	return messages, nil
 }

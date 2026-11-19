@@ -20,6 +20,21 @@ func (testProvider) Generate(
 	}, nil
 }
 
+func (testProvider) Stream(
+	ctx context.Context,
+	request Request,
+	handler StreamHandler,
+) error {
+	if handler != nil {
+		return handler(
+			ctx,
+			"ok",
+		)
+	}
+
+	return nil
+}
+
 func TestRegistry(t *testing.T) {
 	registry := NewRegistry()
 
