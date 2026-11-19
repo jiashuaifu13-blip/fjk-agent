@@ -7,9 +7,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/fjk-dev/fjk-agent/core/agent"
 	"github.com/fjk-dev/fjk-agent/core/config"
-	"github.com/fjk-dev/fjk-agent/core/planner"
 	fjkruntime "github.com/fjk-dev/fjk-agent/core/runtime"
 )
 
@@ -41,36 +39,17 @@ func main() {
 		log.Fatal(err)
 	}
 
-	provider, err :=
-		core.Models().Get(
-			cfg.AIProvider,
-		)
-
-	if err != nil {
+	if core.Agent() == nil {
 		log.Fatal(
-			"get model provider: ",
-			err,
+			"runtime agent is not initialized",
 		)
 	}
 
-	modelPlanner :=
-		planner.NewModelPlanner(
-			provider,
-			core.Tools(),
-		)
-
-	runner :=
-		agent.NewRunner(
-			core.Tasks(),
-			modelPlanner,
-			core.Executor(),
-		)
-
 	run, err :=
-		runner.Run(
+		core.Agent().Run(
 			ctx,
 			"session_agent_check",
-			"请调用 system.echo 工具，把文本「FJK Agent end-to-end successful」原样返回。",
+			"请调用 system.echo 工具，把文本「FJK Agent runtime agent successful」原样返回。",
 		)
 
 	if err != nil {
