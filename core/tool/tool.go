@@ -18,10 +18,11 @@ type Definition struct {
 }
 
 type Request struct {
-	TaskID    string         `json:"task_id,omitempty"`
-	SessionID string         `json:"session_id,omitempty"`
-	ToolName  string         `json:"tool_name"`
-	Arguments map[string]any `json:"arguments,omitempty"`
+	TaskID       string         `json:"task_id,omitempty"`
+	SessionID    string         `json:"session_id,omitempty"`
+	ToolName     string         `json:"tool_name"`
+	Arguments    map[string]any `json:"arguments,omitempty"`
+	UserApproved bool           `json:"user_approved,omitempty"`
 }
 
 type Result struct {

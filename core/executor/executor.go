@@ -5,21 +5,25 @@ import (
 	"fmt"
 
 	"github.com/fjk-dev/fjk-agent/core/event"
+	"github.com/fjk-dev/fjk-agent/core/permission"
 	"github.com/fjk-dev/fjk-agent/core/tool"
 )
 
 type Executor struct {
-	tools  *tool.Registry
-	events *event.Bus
+	tools       *tool.Registry
+	events      *event.Bus
+	permissions *permission.Engine
 }
 
 func New(
 	tools *tool.Registry,
 	events *event.Bus,
+	permissions *permission.Engine,
 ) *Executor {
 	return &Executor{
-		tools:  tools,
-		events: events,
+		tools:       tools,
+		events:      events,
+		permissions: permissions,
 	}
 }
 
@@ -35,6 +39,38 @@ func (e *Executor) ExecuteTool(
 	}
 
 	definition := item.Definition()
+
+	required :=
+		permission.FromToolRisk(
+			definition.Risk,
+		)
+
+	decision :=
+		e.permissions.Check(
+			permission.Request{
+				TaskID:       request.TaskID,
+				SessionID:    request.SessionID,
+				ToolName:     request.ToolName,
+				Required:     required,
+				UserApproved: request.UserApproved,
+			},
+		)
+
+	if !decision.Allowed {
+		if decision.RequiresApproval {
+			return nil, fmt.Errorf(
+				"%w: %s",
+				permission.ErrApprovalRequired,
+				decision.Reason,
+			)
+		}
+
+		return nil, fmt.Errorf(
+			"%w: %s",
+			permission.ErrDenied,
+			decision.Reason,
+		)
+	}
 
 	e.events.Publish(
 		ctx,
