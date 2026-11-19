@@ -1,0 +1,83 @@
+﻿# ============================================================
+# FJK Agent - Git Ignore
+# ============================================================
+
+# Environment / Secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.pfx
+*.p12
+
+# API credentials
+secrets/
+credentials/
+
+# Windows
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# macOS
+.DS_Store
+
+# Linux
+*~
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Temporary
+tmp/
+temp/
+.cache/
+
+# Node
+node_modules/
+dist/
+build/
+coverage/
+.npm/
+.pnpm-store/
+
+# Vite
+.vite/
+
+# Tauri / Rust
+target/
+apps/desktop/src-tauri/target/
+
+# Go
+bin/
+*.exe
+*.test
+*.out
+coverage.out
+vendor/
+
+# SQLite runtime data
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Local application data
+data/
+runtime/
+.local/
+
+# Build artifacts
+artifacts/
+release/
+releases/
