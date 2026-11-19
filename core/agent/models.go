@@ -3,10 +3,11 @@ package agent
 type RunStatus string
 
 const (
-	RunCreated   RunStatus = "CREATED"
-	RunRunning   RunStatus = "RUNNING"
-	RunCompleted RunStatus = "COMPLETED"
-	RunFailed    RunStatus = "FAILED"
+	RunCreated         RunStatus = "CREATED"
+	RunRunning         RunStatus = "RUNNING"
+	RunWaitingApproval RunStatus = "WAITING_APPROVAL"
+	RunCompleted       RunStatus = "COMPLETED"
+	RunFailed          RunStatus = "FAILED"
 )
 
 type Run struct {
