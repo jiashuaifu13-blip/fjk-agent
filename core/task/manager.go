@@ -10,18 +10,15 @@ import (
 type Manager struct {
 	repository Repository
 	events     *event.Bus
-	deviceID   string
 }
 
 func NewManager(
 	repository Repository,
 	events *event.Bus,
-	deviceID string,
 ) *Manager {
 	return &Manager{
 		repository: repository,
 		events:     events,
-		deviceID:   deviceID,
 	}
 }
 
@@ -38,17 +35,25 @@ func (m *Manager) Create(
 		description,
 	)
 
-	if err := m.repository.Create(item); err != nil {
+	if err := m.repository.Create(ctx, item); err != nil {
 		return nil, fmt.Errorf(
 			"create task: %w",
 			err,
 		)
 	}
 
-	m.publish(
+	m.events.Publish(
 		ctx,
-		item,
-		event.TypeTaskCreated,
+		event.New(
+			event.TypeTaskCreated,
+			event.Metadata{
+				TaskID:    item.ID,
+				SessionID: item.SessionID,
+			},
+			map[string]any{
+				"title": item.Title,
+			},
+		),
 	)
 
 	return item, nil
@@ -56,10 +61,11 @@ func (m *Manager) Create(
 
 func (m *Manager) Transition(
 	ctx context.Context,
-	taskID string,
+	id string,
 	next Status,
 ) (*Task, error) {
-	item, err := m.repository.Get(taskID)
+	item, err := m.repository.Get(ctx, id)
+
 	if err != nil {
 		return nil, fmt.Errorf(
 			"get task: %w",
@@ -71,80 +77,71 @@ func (m *Manager) Transition(
 		return nil, err
 	}
 
-	if err := m.repository.Update(item); err != nil {
+	if err := m.repository.Update(ctx, item); err != nil {
 		return nil, fmt.Errorf(
 			"update task: %w",
 			err,
 		)
 	}
 
-	m.publish(
-		ctx,
-		item,
-		eventTypeForStatus(next),
-	)
+	eventType, ok := eventTypeForStatus(next)
+
+	if ok {
+		m.events.Publish(
+			ctx,
+			event.New(
+				eventType,
+				event.Metadata{
+					TaskID:    item.ID,
+					SessionID: item.SessionID,
+				},
+				map[string]any{
+					"status": item.Status,
+				},
+			),
+		)
+	}
 
 	return item, nil
 }
 
-func (m *Manager) Get(taskID string) (*Task, error) {
-	return m.repository.Get(taskID)
-}
-
-func (m *Manager) List() ([]*Task, error) {
-	return m.repository.List()
-}
-
-func (m *Manager) publish(
+func (m *Manager) Get(
 	ctx context.Context,
-	item *Task,
-	eventType event.Type,
-) {
-	if m.events == nil {
-		return
-	}
-
-	m.events.Publish(
-		ctx,
-		event.New(
-			eventType,
-			event.Metadata{
-				TaskID:    item.ID,
-				SessionID: item.SessionID,
-				DeviceID:  m.deviceID,
-			},
-			map[string]any{
-				"status": item.Status,
-				"title":  item.Title,
-			},
-		),
-	)
+	id string,
+) (*Task, error) {
+	return m.repository.Get(ctx, id)
 }
 
-func eventTypeForStatus(status Status) event.Type {
+func (m *Manager) List(
+	ctx context.Context,
+) ([]*Task, error) {
+	return m.repository.List(ctx)
+}
+
+func eventTypeForStatus(status Status) (event.Type, bool) {
 	switch status {
 	case StatusQueued:
-		return event.TypeTaskQueued
+		return event.TypeTaskQueued, true
 
 	case StatusRunning:
-		return event.TypeTaskStarted
+		return event.TypeTaskStarted, true
 
 	case StatusWaitingApproval:
-		return event.TypeTaskWaitingApproval
+		return event.TypeTaskWaitingApproval, true
 
 	case StatusPaused:
-		return event.TypeTaskPaused
+		return event.TypeTaskPaused, true
 
 	case StatusCompleted:
-		return event.TypeTaskCompleted
+		return event.TypeTaskCompleted, true
 
 	case StatusFailed:
-		return event.TypeTaskFailed
+		return event.TypeTaskFailed, true
 
 	case StatusCancelled:
-		return event.TypeTaskCancelled
+		return event.TypeTaskCancelled, true
 
 	default:
-		return event.TypeTaskProgress
+		return "", false
 	}
 }

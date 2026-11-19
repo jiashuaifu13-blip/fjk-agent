@@ -8,79 +8,101 @@ import (
 )
 
 func TestManagerCreateAndTransition(t *testing.T) {
+	ctx := context.Background()
+
 	bus := event.NewBus()
 	repository := NewMemoryRepository()
-
 	manager := NewManager(
 		repository,
 		bus,
-		"device_test",
 	)
 
-	createdEvents := 0
-	startedEvents := 0
+	createdReceived := false
+	queuedReceived := false
 
 	bus.Subscribe(
 		event.TypeTaskCreated,
 		func(ctx context.Context, evt event.Event) {
-			createdEvents++
+			createdReceived = true
 		},
 	)
 
 	bus.Subscribe(
-		event.TypeTaskStarted,
+		event.TypeTaskQueued,
 		func(ctx context.Context, evt event.Event) {
-			startedEvents++
+			queuedReceived = true
 		},
 	)
 
 	item, err := manager.Create(
-		context.Background(),
+		ctx,
 		"session_test",
-		"Test task",
+		"Test Task",
+		"Task Manager test",
+	)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !createdReceived {
+		t.Fatal(
+			"task.created event was not received",
+		)
+	}
+
+	item, err = manager.Transition(
+		ctx,
+		item.ID,
+		StatusQueued,
+	)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if item.Status != StatusQueued {
+		t.Fatalf(
+			"expected QUEUED, got %s",
+			item.Status,
+		)
+	}
+
+	if !queuedReceived {
+		t.Fatal(
+			"task.queued event was not received",
+		)
+	}
+}
+
+func TestManagerRejectsInvalidTransition(t *testing.T) {
+	ctx := context.Background()
+
+	manager := NewManager(
+		NewMemoryRepository(),
+		event.NewBus(),
+	)
+
+	item, err := manager.Create(
+		ctx,
+		"",
+		"Invalid Transition",
 		"",
 	)
 
 	if err != nil {
-		t.Fatalf(
-			"create task failed: %v",
-			err,
-		)
+		t.Fatal(err)
 	}
 
-	if createdEvents != 1 {
-		t.Fatalf(
-			"expected 1 created event, got %d",
-			createdEvents,
-		)
-	}
-
-	if _, err := manager.Transition(
-		context.Background(),
+	_, err = manager.Transition(
+		ctx,
 		item.ID,
-		StatusQueued,
-	); err != nil {
-		t.Fatalf(
-			"queue task failed: %v",
-			err,
-		)
-	}
+		StatusCompleted,
+	)
 
-	if _, err := manager.Transition(
-		context.Background(),
-		item.ID,
-		StatusRunning,
-	); err != nil {
-		t.Fatalf(
-			"start task failed: %v",
-			err,
-		)
-	}
-
-	if startedEvents != 1 {
-		t.Fatalf(
-			"expected 1 started event, got %d",
-			startedEvents,
+	if err == nil {
+		t.Fatal(
+			"expected invalid transition error",
 		)
 	}
 }
