@@ -2,24 +2,25 @@ package conversation
 
 import (
 	"context"
-	"sync"
+	"fmt"
 	"time"
 )
 
 type Manager struct {
-	mu            sync.RWMutex
-	conversations map[string]*Conversation
-	messages      map[string][]*Message
+	repository Repository
 }
 
 func NewManager() *Manager {
+	return NewManagerWithRepository(
+		NewMemoryRepository(),
+	)
+}
+
+func NewManagerWithRepository(
+	repository Repository,
+) *Manager {
 	return &Manager{
-		conversations: make(
-			map[string]*Conversation,
-		),
-		messages: make(
-			map[string][]*Message,
-		),
+		repository: repository,
 	}
 }
 
@@ -30,16 +31,20 @@ func (m *Manager) Create(
 	now := time.Now().UTC()
 
 	item := &Conversation{
-		ID:        NewConversationID(),
-		Title:     title,
+		ID: NewConversationID(),
+
+		Title: title,
+
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.conversations[item.ID] = item
+	if err := m.repository.CreateConversation(
+		ctx,
+		item,
+	); err != nil {
+		return nil
+	}
 
 	return item
 }
@@ -53,24 +58,37 @@ func (m *Manager) AddMessage(
 	now := time.Now().UTC()
 
 	message := &Message{
-		ID:             NewMessageID(),
+		ID: NewMessageID(),
+
 		ConversationID: conversationID,
-		Role:           role,
-		Content:        content,
-		CreatedAt:      now,
+
+		Role: role,
+
+		Content: content,
+
+		CreatedAt: now,
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.messages[conversationID] = append(
-		m.messages[conversationID],
+	if err := m.repository.CreateMessage(
+		ctx,
 		message,
-	)
+	); err != nil {
+		return nil
+	}
 
-	if conversation, ok :=
-		m.conversations[conversationID]; ok {
+	conversation, err :=
+		m.repository.GetConversation(
+			ctx,
+			conversationID,
+		)
+
+	if err == nil {
 		conversation.UpdatedAt = now
+
+		_ = m.repository.UpdateConversation(
+			ctx,
+			conversation,
+		)
 	}
 
 	return message
@@ -80,17 +98,43 @@ func (m *Manager) Messages(
 	ctx context.Context,
 	conversationID string,
 ) []*Message {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	messages, err :=
+		m.repository.ListMessages(
+			ctx,
+			conversationID,
+		)
 
-	source := m.messages[conversationID]
+	if err != nil {
+		return nil
+	}
 
-	result := make(
-		[]*Message,
-		len(source),
+	return messages
+}
+
+func (m *Manager) Get(
+	ctx context.Context,
+	id string,
+) (*Conversation, error) {
+	item, err :=
+		m.repository.GetConversation(
+			ctx,
+			id,
+		)
+
+	if err != nil {
+		return nil, fmt.Errorf(
+			"get conversation: %w",
+			err,
+		)
+	}
+
+	return item, nil
+}
+
+func (m *Manager) List(
+	ctx context.Context,
+) ([]*Conversation, error) {
+	return m.repository.ListConversations(
+		ctx,
 	)
-
-	copy(result, source)
-
-	return result
 }
