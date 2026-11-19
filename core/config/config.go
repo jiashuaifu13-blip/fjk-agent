@@ -8,6 +8,12 @@ type Config struct {
 	Port         string
 	LogLevel     string
 	DatabasePath string
+
+	AIProvider string
+	AIModel    string
+
+	DeepSeekAPIKey  string
+	DeepSeekBaseURL string
 }
 
 func Load() Config {
@@ -31,6 +37,24 @@ func Load() Config {
 		DatabasePath: getEnv(
 			"FJK_DATABASE_PATH",
 			"../data/fjk-agent.db",
+		),
+
+		AIProvider: getEnv(
+			"FJK_AI_PROVIDER",
+			"deepseek",
+		),
+		AIModel: getEnv(
+			"FJK_AI_MODEL",
+			"deepseek-chat",
+		),
+
+		DeepSeekAPIKey: getEnv(
+			"DEEPSEEK_API_KEY",
+			"",
+		),
+		DeepSeekBaseURL: getEnv(
+			"DEEPSEEK_BASE_URL",
+			"https://api.deepseek.com",
 		),
 	}
 }
