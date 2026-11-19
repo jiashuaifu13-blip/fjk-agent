@@ -7,6 +7,7 @@ import (
 	"github.com/fjk-dev/fjk-agent/core/approval"
 	"github.com/fjk-dev/fjk-agent/core/event"
 	"github.com/fjk-dev/fjk-agent/core/permission"
+	"github.com/fjk-dev/fjk-agent/core/task"
 	"github.com/fjk-dev/fjk-agent/core/tool"
 )
 
@@ -18,6 +19,8 @@ type Executor struct {
 	permissions *permission.Engine
 
 	approvals *approval.Manager
+
+	tasks *task.Manager
 }
 
 func New(
@@ -25,6 +28,7 @@ func New(
 	events *event.Bus,
 	permissions *permission.Engine,
 	approvals *approval.Manager,
+	tasks *task.Manager,
 ) *Executor {
 	return &Executor{
 		tools: tools,
@@ -34,6 +38,8 @@ func New(
 		permissions: permissions,
 
 		approvals: approvals,
+
+		tasks: tasks,
 	}
 }
 
@@ -81,11 +87,35 @@ func (e *Executor) ExecuteTool(
 		}
 
 		if request.ApprovalID == "" {
-			return nil, fmt.Errorf(
-				"%w: %s",
-				permission.ErrApprovalRequired,
-				decision.Reason,
-			)
+			approvalItem, err :=
+				e.approvals.Request(
+					ctx,
+					request.TaskID,
+					request.SessionID,
+					request.ToolName,
+					request.Arguments,
+				)
+
+			if err != nil {
+				return nil, fmt.Errorf(
+					"create approval: %w",
+					err,
+				)
+			}
+
+			if err :=
+				e.waitForApproval(
+					ctx,
+					request.TaskID,
+				); err != nil {
+				return nil, err
+			}
+
+			return nil,
+				&ApprovalRequiredError{
+					ApprovalID: approvalItem.ID,
+					Reason:     decision.Reason,
+				}
 		}
 
 		if e.approvals == nil {
@@ -109,6 +139,14 @@ func (e *Executor) ExecuteTool(
 				"validate approval: %w",
 				err,
 			)
+		}
+
+		if err :=
+			e.resumeAfterApproval(
+				ctx,
+				request.TaskID,
+			); err != nil {
+			return nil, err
 		}
 	}
 
@@ -186,4 +224,89 @@ func (e *Executor) ExecuteTool(
 	)
 
 	return result, nil
+}
+
+func (e *Executor) waitForApproval(
+	ctx context.Context,
+	taskID string,
+) error {
+	if taskID == "" ||
+		e.tasks == nil {
+		return nil
+	}
+
+	current, err :=
+		e.tasks.Get(
+			ctx,
+			taskID,
+		)
+
+	if err != nil {
+		return fmt.Errorf(
+			"get task before approval: %w",
+			err,
+		)
+	}
+
+	if current.Status != task.StatusRunning {
+		return nil
+	}
+
+	if _, err :=
+		e.tasks.Transition(
+			ctx,
+			taskID,
+			task.StatusWaitingApproval,
+		); err != nil {
+
+		return fmt.Errorf(
+			"transition task to waiting approval: %w",
+			err,
+		)
+	}
+
+	return nil
+}
+
+func (e *Executor) resumeAfterApproval(
+	ctx context.Context,
+	taskID string,
+) error {
+	if taskID == "" ||
+		e.tasks == nil {
+		return nil
+	}
+
+	current, err :=
+		e.tasks.Get(
+			ctx,
+			taskID,
+		)
+
+	if err != nil {
+		return fmt.Errorf(
+			"get task after approval: %w",
+			err,
+		)
+	}
+
+	if current.Status !=
+		task.StatusWaitingApproval {
+		return nil
+	}
+
+	if _, err :=
+		e.tasks.Transition(
+			ctx,
+			taskID,
+			task.StatusRunning,
+		); err != nil {
+
+		return fmt.Errorf(
+			"resume task after approval: %w",
+			err,
+		)
+	}
+
+	return nil
 }

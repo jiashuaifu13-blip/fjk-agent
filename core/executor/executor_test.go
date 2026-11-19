@@ -63,6 +63,7 @@ func newTestExecutor(
 		event.NewBus(),
 		permission.NewEngine(),
 		approvalManager,
+		nil,
 	)
 
 	return exec, approvalManager

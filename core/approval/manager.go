@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/fjk-dev/fjk-agent/core/event"
 )
 
 type Manager struct {
 	repository Repository
+	events     *event.Bus
 }
 
 func NewManager(
@@ -15,6 +18,16 @@ func NewManager(
 ) *Manager {
 	return &Manager{
 		repository: repository,
+	}
+}
+
+func NewManagerWithEvents(
+	repository Repository,
+	events *event.Bus,
+) *Manager {
+	return &Manager{
+		repository: repository,
+		events:     events,
 	}
 }
 
@@ -63,6 +76,12 @@ func (m *Manager) Request(
 		)
 	}
 
+	m.publish(
+		ctx,
+		event.TypeApprovalRequested,
+		item,
+	)
+
 	return item, nil
 }
 
@@ -70,22 +89,62 @@ func (m *Manager) Approve(
 	ctx context.Context,
 	id string,
 ) error {
-	return m.repository.Decide(
+	if err := m.repository.Decide(
 		ctx,
 		id,
 		StatusApproved,
+	); err != nil {
+		return err
+	}
+
+	item, err :=
+		m.repository.Get(
+			ctx,
+			id,
+		)
+
+	if err != nil {
+		return err
+	}
+
+	m.publish(
+		ctx,
+		event.TypeApprovalApproved,
+		item,
 	)
+
+	return nil
 }
 
 func (m *Manager) Reject(
 	ctx context.Context,
 	id string,
 ) error {
-	return m.repository.Decide(
+	if err := m.repository.Decide(
 		ctx,
 		id,
 		StatusRejected,
+	); err != nil {
+		return err
+	}
+
+	item, err :=
+		m.repository.Get(
+			ctx,
+			id,
+		)
+
+	if err != nil {
+		return err
+	}
+
+	m.publish(
+		ctx,
+		event.TypeApprovalRejected,
+		item,
 	)
+
+	return nil
 }
 
 func (m *Manager) Get(
@@ -118,9 +177,56 @@ func (m *Manager) ValidateAndConsume(
 		return err
 	}
 
-	return m.repository.Consume(
+	if err := m.repository.Consume(
 		ctx,
 		id,
 		scopeHash,
+	); err != nil {
+		return err
+	}
+
+	item, err :=
+		m.repository.Get(
+			ctx,
+			id,
+		)
+
+	if err != nil {
+		return err
+	}
+
+	m.publish(
+		ctx,
+		event.TypeApprovalConsumed,
+		item,
+	)
+
+	return nil
+}
+
+func (m *Manager) publish(
+	ctx context.Context,
+	eventType event.Type,
+	item *Approval,
+) {
+	if m.events == nil {
+		return
+	}
+
+	m.events.Publish(
+		ctx,
+		event.New(
+			eventType,
+			event.Metadata{
+				TaskID:    item.TaskID,
+				SessionID: item.SessionID,
+			},
+			map[string]any{
+				"approval_id": item.ID,
+				"tool_name":   item.ToolName,
+				"status":      item.Status,
+				"scope_hash":  item.ScopeHash,
+			},
+		),
 	)
 }
