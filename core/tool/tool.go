@@ -18,16 +18,21 @@ type Definition struct {
 }
 
 type Request struct {
-	TaskID       string         `json:"task_id,omitempty"`
-	SessionID    string         `json:"session_id,omitempty"`
-	ToolName     string         `json:"tool_name"`
-	Arguments    map[string]any `json:"arguments,omitempty"`
-	UserApproved bool           `json:"user_approved,omitempty"`
+	TaskID string `json:"task_id,omitempty"`
+
+	SessionID string `json:"session_id,omitempty"`
+
+	ToolName string `json:"tool_name"`
+
+	Arguments map[string]any `json:"arguments,omitempty"`
+
+	ApprovalID string `json:"approval_id,omitempty"`
 }
 
 type Result struct {
 	ToolName string `json:"tool_name"`
-	Output   any    `json:"output,omitempty"`
+
+	Output any `json:"output,omitempty"`
 }
 
 type Tool interface {

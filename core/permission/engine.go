@@ -21,12 +21,6 @@ func (e *Engine) Check(
 		}
 
 	case LevelHigh:
-		if request.UserApproved {
-			return Decision{
-				Allowed: true,
-			}
-		}
-
 		return Decision{
 			Allowed:          false,
 			RequiresApproval: true,
@@ -34,12 +28,6 @@ func (e *Engine) Check(
 		}
 
 	case LevelCritical:
-		if request.UserApproved {
-			return Decision{
-				Allowed: true,
-			}
-		}
-
 		return Decision{
 			Allowed:          false,
 			RequiresApproval: true,

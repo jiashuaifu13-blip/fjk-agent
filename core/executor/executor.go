@@ -4,26 +4,36 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/fjk-dev/fjk-agent/core/approval"
 	"github.com/fjk-dev/fjk-agent/core/event"
 	"github.com/fjk-dev/fjk-agent/core/permission"
 	"github.com/fjk-dev/fjk-agent/core/tool"
 )
 
 type Executor struct {
-	tools       *tool.Registry
-	events      *event.Bus
+	tools *tool.Registry
+
+	events *event.Bus
+
 	permissions *permission.Engine
+
+	approvals *approval.Manager
 }
 
 func New(
 	tools *tool.Registry,
 	events *event.Bus,
 	permissions *permission.Engine,
+	approvals *approval.Manager,
 ) *Executor {
 	return &Executor{
-		tools:       tools,
-		events:      events,
+		tools: tools,
+
+		events: events,
+
 		permissions: permissions,
+
+		approvals: approvals,
 	}
 }
 
@@ -32,13 +42,16 @@ func (e *Executor) ExecuteTool(
 	request tool.Request,
 ) (*tool.Result, error) {
 	item, err :=
-		e.tools.Get(request.ToolName)
+		e.tools.Get(
+			request.ToolName,
+		)
 
 	if err != nil {
 		return nil, err
 	}
 
-	definition := item.Definition()
+	definition :=
+		item.Definition()
 
 	required :=
 		permission.FromToolRisk(
@@ -48,16 +61,26 @@ func (e *Executor) ExecuteTool(
 	decision :=
 		e.permissions.Check(
 			permission.Request{
-				TaskID:       request.TaskID,
-				SessionID:    request.SessionID,
-				ToolName:     request.ToolName,
-				Required:     required,
-				UserApproved: request.UserApproved,
+				TaskID: request.TaskID,
+
+				SessionID: request.SessionID,
+
+				ToolName: request.ToolName,
+
+				Required: required,
 			},
 		)
 
 	if !decision.Allowed {
-		if decision.RequiresApproval {
+		if !decision.RequiresApproval {
+			return nil, fmt.Errorf(
+				"%w: %s",
+				permission.ErrDenied,
+				decision.Reason,
+			)
+		}
+
+		if request.ApprovalID == "" {
 			return nil, fmt.Errorf(
 				"%w: %s",
 				permission.ErrApprovalRequired,
@@ -65,11 +88,28 @@ func (e *Executor) ExecuteTool(
 			)
 		}
 
-		return nil, fmt.Errorf(
-			"%w: %s",
-			permission.ErrDenied,
-			decision.Reason,
-		)
+		if e.approvals == nil {
+			return nil, fmt.Errorf(
+				"%w: approval manager unavailable",
+				permission.ErrDenied,
+			)
+		}
+
+		if err :=
+			e.approvals.ValidateAndConsume(
+				ctx,
+				request.ApprovalID,
+				request.TaskID,
+				request.SessionID,
+				request.ToolName,
+				request.Arguments,
+			); err != nil {
+
+			return nil, fmt.Errorf(
+				"validate approval: %w",
+				err,
+			)
+		}
 	}
 
 	e.events.Publish(
@@ -77,21 +117,27 @@ func (e *Executor) ExecuteTool(
 		event.New(
 			event.TypeToolCalled,
 			event.Metadata{
-				TaskID:    request.TaskID,
+				TaskID: request.TaskID,
+
 				SessionID: request.SessionID,
 			},
 			map[string]any{
 				"tool_name": definition.Name,
-				"risk":      definition.Risk,
+
+				"risk": definition.Risk,
+
 				"arguments": request.Arguments,
+
+				"approval_id": request.ApprovalID,
 			},
 		),
 	)
 
-	result, err := item.Execute(
-		ctx,
-		request,
-	)
+	result, err :=
+		item.Execute(
+			ctx,
+			request,
+		)
 
 	if err != nil {
 		e.events.Publish(
@@ -99,13 +145,16 @@ func (e *Executor) ExecuteTool(
 			event.New(
 				event.TypeToolResult,
 				event.Metadata{
-					TaskID:    request.TaskID,
+					TaskID: request.TaskID,
+
 					SessionID: request.SessionID,
 				},
 				map[string]any{
 					"tool_name": definition.Name,
-					"success":   false,
-					"error":     err.Error(),
+
+					"success": false,
+
+					"error": err.Error(),
 				},
 			),
 		)
@@ -122,13 +171,16 @@ func (e *Executor) ExecuteTool(
 		event.New(
 			event.TypeToolResult,
 			event.Metadata{
-				TaskID:    request.TaskID,
+				TaskID: request.TaskID,
+
 				SessionID: request.SessionID,
 			},
 			map[string]any{
 				"tool_name": definition.Name,
-				"success":   true,
-				"output":    result.Output,
+
+				"success": true,
+
+				"output": result.Output,
 			},
 		),
 	)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/fjk-dev/fjk-agent/core/approval"
 	"github.com/fjk-dev/fjk-agent/core/event"
 	"github.com/fjk-dev/fjk-agent/core/permission"
 	"github.com/fjk-dev/fjk-agent/core/tool"
@@ -32,36 +33,61 @@ func (e echoTool) Execute(
 	}, nil
 }
 
-func TestExecuteLowRiskTool(t *testing.T) {
-	ctx := context.Background()
+func newTestExecutor(
+	t *testing.T,
+	risk tool.RiskLevel,
+) (
+	*Executor,
+	*approval.Manager,
+) {
+	t.Helper()
 
-	registry := tool.NewRegistry()
-	bus := event.NewBus()
-	permissions := permission.NewEngine()
+	registry :=
+		tool.NewRegistry()
 
 	if err := registry.Register(
 		echoTool{
-			risk: tool.RiskLow,
+			risk: risk,
 		},
 	); err != nil {
 		t.Fatal(err)
 	}
 
+	approvalManager :=
+		approval.NewManager(
+			approval.NewMemoryRepository(),
+		)
+
 	exec := New(
 		registry,
-		bus,
-		permissions,
+		event.NewBus(),
+		permission.NewEngine(),
+		approvalManager,
 	)
 
-	result, err := exec.ExecuteTool(
-		ctx,
-		tool.Request{
-			ToolName: "test.echo",
-			Arguments: map[string]any{
-				"text": "hello",
+	return exec, approvalManager
+}
+
+func TestExecuteLowRiskTool(
+	t *testing.T,
+) {
+	exec, _ :=
+		newTestExecutor(
+			t,
+			tool.RiskLow,
+		)
+
+	result, err :=
+		exec.ExecuteTool(
+			context.Background(),
+			tool.Request{
+				ToolName: "test.echo",
+
+				Arguments: map[string]any{
+					"text": "hello",
+				},
 			},
-		},
-	)
+		)
 
 	if err != nil {
 		t.Fatal(err)
@@ -75,35 +101,22 @@ func TestExecuteLowRiskTool(t *testing.T) {
 	}
 }
 
-func TestHighRiskToolRequiresApproval(
+func TestHighRiskRequiresApproval(
 	t *testing.T,
 ) {
-	ctx := context.Background()
+	exec, _ :=
+		newTestExecutor(
+			t,
+			tool.RiskHigh,
+		)
 
-	registry := tool.NewRegistry()
-	bus := event.NewBus()
-	permissions := permission.NewEngine()
-
-	if err := registry.Register(
-		echoTool{
-			risk: tool.RiskHigh,
-		},
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	exec := New(
-		registry,
-		bus,
-		permissions,
-	)
-
-	_, err := exec.ExecuteTool(
-		ctx,
-		tool.Request{
-			ToolName: "test.echo",
-		},
-	)
+	_, err :=
+		exec.ExecuteTool(
+			context.Background(),
+			tool.Request{
+				ToolName: "test.echo",
+			},
+		)
 
 	if !errors.Is(
 		err,
@@ -116,38 +129,143 @@ func TestHighRiskToolRequiresApproval(
 	}
 }
 
-func TestHighRiskToolWithApproval(
+func TestHighRiskWithApproval(
 	t *testing.T,
 ) {
-	ctx := context.Background()
+	ctx :=
+		context.Background()
 
-	registry := tool.NewRegistry()
-	bus := event.NewBus()
-	permissions := permission.NewEngine()
+	exec, approvals :=
+		newTestExecutor(
+			t,
+			tool.RiskHigh,
+		)
 
-	if err := registry.Register(
-		echoTool{
-			risk: tool.RiskHigh,
-		},
-	); err != nil {
-		t.Fatal(err)
-	}
+	arguments :=
+		map[string]any{
+			"text": "hello",
+		}
 
-	exec := New(
-		registry,
-		bus,
-		permissions,
-	)
-
-	_, err := exec.ExecuteTool(
-		ctx,
-		tool.Request{
-			ToolName:     "test.echo",
-			UserApproved: true,
-		},
-	)
+	item, err :=
+		approvals.Request(
+			ctx,
+			"task_test",
+			"session_test",
+			"test.echo",
+			arguments,
+		)
 
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	if err :=
+		approvals.Approve(
+			ctx,
+			item.ID,
+		); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err =
+		exec.ExecuteTool(
+			ctx,
+			tool.Request{
+				TaskID: "task_test",
+
+				SessionID: "session_test",
+
+				ToolName: "test.echo",
+
+				Arguments: arguments,
+
+				ApprovalID: item.ID,
+			},
+		)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stored, err :=
+		approvals.Get(
+			ctx,
+			item.ID,
+		)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if stored.Status !=
+		approval.StatusConsumed {
+		t.Fatalf(
+			"expected CONSUMED, got %s",
+			stored.Status,
+		)
+	}
+}
+
+func TestApprovalScopeMismatch(
+	t *testing.T,
+) {
+	ctx :=
+		context.Background()
+
+	exec, approvals :=
+		newTestExecutor(
+			t,
+			tool.RiskHigh,
+		)
+
+	item, err :=
+		approvals.Request(
+			ctx,
+			"task_test",
+			"session_test",
+			"test.echo",
+			map[string]any{
+				"text": "approved",
+			},
+		)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err :=
+		approvals.Approve(
+			ctx,
+			item.ID,
+		); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err =
+		exec.ExecuteTool(
+			ctx,
+			tool.Request{
+				TaskID: "task_test",
+
+				SessionID: "session_test",
+
+				ToolName: "test.echo",
+
+				Arguments: map[string]any{
+					"text": "modified",
+				},
+
+				ApprovalID: item.ID,
+			},
+		)
+
+	if !errors.Is(
+		err,
+		approval.ErrScopeMismatch,
+	) {
+		t.Fatalf(
+			"expected scope mismatch, got %v",
+			err,
+		)
 	}
 }
